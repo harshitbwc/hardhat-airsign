@@ -1,0 +1,17 @@
+{
+  "name": "hardhat-airsign-example",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.js --network sepolia",
+    "airsign": "hardhat airsign-start"
+  },
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "dotenv": "^17.4.0",
+    "ethers": "^5.7.2",
+    "hardhat": "^2.19.0",
+    "hardhat-airsign": "file:../packages/plugin"
+  }
+}
