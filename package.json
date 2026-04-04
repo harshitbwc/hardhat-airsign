@@ -2,7 +2,11 @@
   "name": "hardhat-airsign-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "Deploy smart contracts from your dev machine. Sign transactions from anywhere.",
+  "description": "Deploy smart contracts from your dev machine. Sign transactions and run tasks from anywhere — no private keys needed.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/harshitbwc/hardhat-airsign.git"
+  },
   "workspaces": [
     "packages/*"
   ],

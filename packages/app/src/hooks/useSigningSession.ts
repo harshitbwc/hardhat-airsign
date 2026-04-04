@@ -157,6 +157,7 @@ export function useSigningSession(
   );
 
   return {
+    socket: socketRef.current,
     status,
     pendingRequests,
     completedRequests,

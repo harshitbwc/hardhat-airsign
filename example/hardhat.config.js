@@ -2,6 +2,9 @@ require("dotenv").config();
 require("@nomiclabs/hardhat-ethers");
 require("hardhat-airsign");
 
+// Custom tasks
+require("./tasks/interact");
+
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: "0.8.24",

@@ -4,6 +4,7 @@ import http from "http";
 import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
+import type { ProjectContext, TaskInfo, NetworkInfo } from "../types";
 
 // PID file location — stored next to node_modules (project root)
 function getPidFilePath(): string {
@@ -52,6 +53,10 @@ task("airsign-start", "Start the AirSign signing server in the background")
       try { fs.unlinkSync(pidFile); } catch {}
     }
 
+    // ─── Extract project context from HRE to pass to daemon ──────
+    const serializedNetworks = extractNetworks(hre);
+    const serializedTasks = extractTasks(hre);
+
     // Spawn the server as a detached background process
     // We re-run this same task with AIRSIGN_DAEMON=1 env var
     const logFile = path.join(path.dirname(pidFile), ".airsign.log");
@@ -66,6 +71,8 @@ task("airsign-start", "Start the AirSign signing server in the background")
         env: {
           ...process.env,
           AIRSIGN_DAEMON: "1",
+          AIRSIGN_NETWORKS: JSON.stringify(serializedNetworks),
+          AIRSIGN_TASKS: JSON.stringify(serializedTasks),
         },
         cwd: process.cwd(),
       }
@@ -112,11 +119,14 @@ async function runDaemon(port: number, host: string, pidFile: string) {
   // Write PID file
   fs.writeFileSync(pidFile, process.pid.toString(), "utf-8");
 
+  // Build project context from the Hardhat environment
+  const projectContext = buildProjectContext();
+
   // Retry starting the server — port may take a moment to release
   let server!: InstanceType<typeof SigningServer>;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      server = new SigningServer(port, host);
+      server = new SigningServer(port, host, undefined, projectContext);
       await server.start();
       break;
     } catch (err: any) {
@@ -148,6 +158,153 @@ async function runDaemon(port: number, host: string, pidFile: string) {
 
   // Keep alive
   await new Promise<void>(() => {});
+}
+
+/**
+ * Build project context by scanning the current Hardhat project.
+ * Reads hardhat.config.js to extract networks, scans scripts/ for files,
+ * and reads registered tasks from the Hardhat task system.
+ */
+function buildProjectContext(): ProjectContext {
+  const projectRoot = process.cwd();
+
+  // Discover networks from hardhat config
+  const networks: NetworkInfo[] = [];
+  try {
+    // Try to read hardhat config for network info
+    const configPath = path.join(projectRoot, "hardhat.config.js");
+    const configTsPath = path.join(projectRoot, "hardhat.config.ts");
+    const configFile = fs.existsSync(configPath)
+      ? configPath
+      : fs.existsSync(configTsPath)
+      ? configTsPath
+      : null;
+
+    if (configFile) {
+      // We can't easily import the config in daemon mode, so we'll
+      // pass networks via the AIRSIGN_NETWORKS env var from the parent
+      const networksEnv = process.env.AIRSIGN_NETWORKS;
+      if (networksEnv) {
+        try {
+          const parsed = JSON.parse(networksEnv);
+          networks.push(...parsed);
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // Discover tasks from env var (serialized by parent)
+  const tasks: TaskInfo[] = [];
+  const tasksEnv = process.env.AIRSIGN_TASKS;
+  if (tasksEnv) {
+    try {
+      const parsed = JSON.parse(tasksEnv);
+      tasks.push(...parsed);
+    } catch {}
+  }
+
+  return { projectRoot, tasks, networks };
+}
+
+// ─── HRE Extraction Helpers ─────────────────────────────────────
+
+/**
+ * Extract network definitions from the Hardhat config.
+ */
+function extractNetworks(hre: HardhatRuntimeEnvironment): NetworkInfo[] {
+  const networks: NetworkInfo[] = [];
+  const config = hre.config.networks;
+
+  for (const [name, netConfig] of Object.entries(config)) {
+    if (name === "hardhat") continue; // skip the default in-memory network
+
+    const nc = netConfig as any;
+    networks.push({
+      name,
+      chainId: nc.chainId,
+      url: nc.url,
+      remoteSigner: nc.remoteSigner || false,
+    });
+  }
+
+  return networks;
+}
+
+/**
+ * Extract custom task definitions from the Hardhat task system.
+ * Filters out built-in Hardhat tasks and our own airsign-* tasks.
+ */
+function extractTasks(hre: HardhatRuntimeEnvironment): TaskInfo[] {
+  const tasks: TaskInfo[] = [];
+
+  // Built-in tasks to exclude
+  const builtinTasks = new Set([
+    "compile", "clean", "test", "run", "flatten",
+    "console", "node", "check", "help",
+    "airsign-start", "airsign-stop", "airsign-status",
+    "verify", "etherscan-verify", "typechain",
+  ]);
+
+  const hreAny = hre as any;
+  const taskDefinitions = hreAny.tasks || hreAny._tasks;
+
+  if (!taskDefinitions) return tasks;
+
+  for (const [name, taskDef] of Object.entries(taskDefinitions)) {
+    if (builtinTasks.has(name)) continue;
+
+    const td = taskDef as any;
+
+    // Skip subtasks (prefixed with ":", like "compile:solidity")
+    if (name.includes(":")) continue;
+
+    const params: Array<{
+      name: string;
+      description?: string;
+      defaultValue?: string;
+      isOptional: boolean;
+      isFlag: boolean;
+    }> = [];
+
+    // Extract positional params
+    if (td.positionalParamDefinitions) {
+      for (const p of td.positionalParamDefinitions) {
+        params.push({
+          name: p.name,
+          description: p.description,
+          defaultValue: p.defaultValue !== undefined ? String(p.defaultValue) : undefined,
+          isOptional: p.isOptional || false,
+          isFlag: false,
+        });
+      }
+    }
+
+    // Extract named params
+    if (td.paramDefinitions) {
+      for (const [pName, pDef] of Object.entries(td.paramDefinitions)) {
+        // Skip built-in hardhat params
+        if (["network", "config", "help", "verbose", "version"].includes(pName)) continue;
+
+        const p = pDef as any;
+        params.push({
+          name: pName,
+          description: p.description,
+          defaultValue: p.defaultValue !== undefined ? String(p.defaultValue) : undefined,
+          isOptional: p.isOptional || false,
+          isFlag: p.isFlag || false,
+        });
+      }
+    }
+
+    tasks.push({
+      name,
+      description: td.description || "",
+      params,
+      isSubtask: false,
+    });
+  }
+
+  return tasks;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────

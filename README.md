@@ -1,6 +1,6 @@
 # hardhat-airsign
 
-Deploy smart contracts from your dev machine. Sign transactions from anywhere — no private keys in `.env` files ever.
+Deploy smart contracts from your dev machine. Sign transactions from anywhere — no private keys in `.env` files ever. Run Hardhat tasks and scripts directly from the browser.
 
 ## The Problem
 
@@ -9,7 +9,7 @@ Every Hardhat developer knows the drill: export your MetaMask private key, paste
 ## How It Works
 
 ```
-  Dev Machine (Terminal)                    Signer Machine (Browser)
+  Dev Machine (Terminal)                    Signer (Browser)
   ┌─────────────────────┐                  ┌──────────────────────┐
   │ npx hardhat run      │   HTTP / WS     │  localhost:9090      │
   │ scripts/deploy.js    │◄──────────────► │   ( ngrok URL )      │
@@ -25,9 +25,20 @@ Every Hardhat developer knows the drill: export your MetaMask private key, paste
 1. Run `npx hardhat airsign-start` — a signing server starts in the background on port `9090`
 2. Open the URL in a browser and connect your wallet (MetaMask, Rainbow, Coinbase, etc.)
 3. Run your deploy script — transactions appear in the browser for approval
-4. Click **Sign & Send**, MetaMask signs, and the tx is broadcast. Done.
+4. Click **Confirm**, MetaMask signs, and the tx is broadcast. Done.
 
 Your existing deploy scripts work without any changes.
+
+## Features
+
+- **Remote signing** — sign transactions from any machine, no private keys on the dev box
+- **Runner UI** — run Hardhat tasks and scripts directly from the browser with a 3-column interface (list, detail, console)
+- **Signing modal** — transaction approvals appear as an overlay without interrupting your workflow
+- **Multi-wallet support** — MetaMask, Rainbow, Coinbase Wallet, WalletConnect via RainbowKit
+- **Multi-chain** — Ethereum, Sepolia, Polygon, Arbitrum, Optimism, Base, BSC, Avalanche, and more
+- **Zero config** — existing deploy scripts work as-is, just set `remoteSigner: true`
+- **Block explorer links** — click through to Etherscan/Polygonscan after signing
+- **Transaction history** — see all signed/rejected transactions in the current session
 
 ## Quick Start
 
@@ -96,7 +107,34 @@ ngrok http 9090
 npx hardhat run scripts/deploy.js --network sepolia
 ```
 
-The signer sees the transaction in their browser, clicks **Sign & Send**, and the contract deploys.
+The signer sees the transaction in their browser, clicks **Confirm**, and the contract deploys.
+
+## Runner: Tasks & Scripts from the Browser
+
+The **Runner** tab lets signers execute Hardhat tasks and scripts directly from the UI — no terminal needed on the signer's end.
+
+### How it works
+
+When the AirSign server starts, it extracts your project's tasks, scripts, and network configurations from the Hardhat Runtime Environment. The Runner UI presents these in a 3-column layout:
+
+- **Left panel** — filterable list of all scripts and custom tasks
+- **Middle panel** — selected item details with network selector, task parameter inputs, and environment variables
+- **Right panel** — real-time console output streamed from the process
+
+Signing requests triggered by a running script appear as a **modal overlay** on top of the Runner — no tab switching required. You approve or reject in-place and the script continues.
+
+### Running a script
+
+1. Switch to the **Runner** tab in the UI
+2. Select a script from the left panel
+3. Choose a target network
+4. Click **Run**
+5. Watch output stream in the console panel
+6. Approve any signing requests in the modal overlay
+
+### Running a task
+
+Same flow, but tasks also show parameter inputs (text fields, flag toggles) extracted from the task definition.
 
 ## Usage in Scripts
 
@@ -145,7 +183,7 @@ const signer = await hre.remoteSigner.getSigner();
 
 | Command | Description |
 |---------|-------------|
-| `npx hardhat airsign-start` | Start the signing server (background) |
+| `npx hardhat airsign-start` | Start the signing server (background daemon) |
 | `npx hardhat airsign-stop` | Stop the signing server |
 | `npx hardhat airsign-status` | Check server and wallet status |
 
@@ -173,40 +211,34 @@ module.exports = {
 };
 ```
 
-## Signing UI Features
-
-- **RainbowKit wallet connection** — MetaMask, Rainbow, Coinbase Wallet, WalletConnect, and more
-- **Transaction details** — shows To, Value, Data with expandable full transaction data
-- **Block explorer links** — click through to Etherscan/Polygonscan/etc. after signing
-- **Multi-chain support** — Ethereum, Sepolia, Polygon, Arbitrum, Optimism, Base, BSC, Avalanche, and more
-- **Transaction history** — see all signed/rejected transactions in the current session
-
 ## Architecture
 
 The project is a monorepo with two packages:
 
-- **`packages/plugin`** — The Hardhat plugin (published to npm as `hardhat-airsign`). Contains the `RemoteSigner` (custom ethers.js v5 Signer), `SigningServer` (Express + Socket.io), `SigningClient` (HTTP transport), and CLI tasks.
-- **`packages/app`** — The signing web app (private, embedded in the plugin). React + RainbowKit + wagmi + Tailwind. Served by the plugin's Express server.
+- **`packages/plugin`** — The Hardhat plugin (published to npm as `hardhat-airsign`). Contains the `RemoteSigner` (custom ethers.js v5 Signer), `SigningServer` (Express + Socket.io), `SigningClient` (HTTP transport), Runner process execution, and CLI tasks.
+- **`packages/app`** — The signing web app (private, embedded in the plugin). React + RainbowKit + wagmi + Tailwind with an iOS-inspired glass morphism design.
 
 ### How the pieces connect
 
-1. `airsign-start` launches a background daemon running `SigningServer` (Express + Socket.io)
-2. The server serves the React signing app and exposes HTTP endpoints for deploy scripts
+1. `airsign-start` extracts tasks, networks, and scripts from the HRE, then launches a background daemon running `SigningServer`
+2. The server serves the React app and exposes HTTP endpoints for deploy scripts and Runner process execution
 3. Deploy scripts use `SigningClient` to communicate with the server via HTTP
-4. The browser connects to the server via Socket.io for real-time signing requests
+4. The browser connects via Socket.io for real-time signing requests and console output streaming
 5. When a deploy script calls `getSigners()`, the plugin connects to the server, gets the wallet address, and returns a `RemoteSigner`
 6. `RemoteSigner.sendTransaction()` sends the unsigned tx to the server, which forwards it to the browser, where MetaMask signs and broadcasts it
+7. The Runner spawns `npx hardhat run` or `npx hardhat <task>` as child processes, piping stdout/stderr to the browser in real time
 
 ## Limitations
 
 - **ethers v5 only** — the plugin extends `ethers.Signer` from ethers v5. Projects using `@nomicfoundation/hardhat-ethers` with ethers v6 are not yet supported.
 - **Single signer** — `getSigners()` returns one signer (the connected wallet). Scripts that destructure multiple signers like `const [deployer, treasury] = await getSigners()` will only get one.
 - **No `signTransaction()`** — browser wallets sign and broadcast in one step (`eth_sendTransaction`). The `signTransaction()` method throws. Use `sendTransaction()` instead, which is what 99% of scripts do.
+- **One process at a time** — the Runner executes one script or task at a time. Wait for the current process to finish (or kill it) before starting another.
 
 ## Development
 
 ```bash
-git clone https://github.com/AirSign-Dev/hardhat-airsign.git
+git clone https://github.com/harshitbwc/hardhat-airsign.git
 cd hardhat-airsign
 
 # Install all dependencies
@@ -233,6 +265,7 @@ npx hardhat run scripts/deploy.js --network sepolia
 - The server restricts API access to same-origin requests only
 - Request body validation and size limits (5MB) prevent abuse
 - For remote access via ngrok, the connection is encrypted (HTTPS)
+- Runner processes execute within the project directory with the same permissions as your terminal
 
 ## License
 

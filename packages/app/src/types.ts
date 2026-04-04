@@ -53,3 +53,51 @@ export interface SigningResponse {
   result?: string; // tx hash for sendTransaction, signature for signMessage
   error?: string;
 }
+
+// ─── Runner Types ──────────────────────────────────────────────────
+
+export interface TaskParamInfo {
+  name: string;
+  description?: string;
+  defaultValue?: string;
+  isOptional: boolean;
+  isFlag: boolean;
+}
+
+export interface TaskInfo {
+  name: string;
+  description: string;
+  params: TaskParamInfo[];
+  isSubtask: boolean;
+}
+
+export interface ScriptInfo {
+  name: string;
+  path: string;
+}
+
+export interface NetworkInfo {
+  name: string;
+  chainId?: number;
+  url?: string;
+  remoteSigner?: boolean;
+}
+
+export interface ProcessStartedPayload {
+  processId: string;
+  type: "script" | "task";
+  name: string;
+  network?: string;
+}
+
+export interface ProcessOutputPayload {
+  processId: string;
+  stream: "stdout" | "stderr";
+  data: string;
+}
+
+export interface ProcessExitPayload {
+  processId: string;
+  code: number;
+  signal?: string;
+}

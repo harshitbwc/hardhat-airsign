@@ -1,7 +1,7 @@
 {
   "name": "hardhat-airsign",
   "version": "0.1.0",
-  "description": "Hardhat plugin for remote transaction signing via browser wallet. No private keys in .env files.",
+  "description": "Hardhat plugin for remote transaction signing via browser wallet. Deploy contracts, run tasks, and execute scripts — no private keys in .env files.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "bundle-app": "rm -rf app-dist && cp -r ../app/dist app-dist",
+    "bundle-app": "mv app-dist app-dist-old 2>/dev/null; cp -r ../app/dist app-dist && rm -rf app-dist-old",
     "prebuild:publish": "npm run build && npm run bundle-app",
     "clean": "rm -rf dist app-dist",
     "prepublishOnly": "npm run build && npm run bundle-app"
@@ -25,8 +25,24 @@
     "metamask",
     "airsign",
     "walletconnect",
-    "deploy"
+    "remote-signer",
+    "browser-wallet",
+    "deploy",
+    "transaction-signing",
+    "runner",
+    "solidity"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/harshitbwc/hardhat-airsign.git"
+  },
+  "homepage": "https://github.com/harshitbwc/hardhat-airsign#readme",
+  "bugs": {
+    "url": "https://github.com/harshitbwc/hardhat-airsign/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "peerDependencies": {
     "ethers": "^5.0.0",
     "hardhat": "^2.0.0"
@@ -50,5 +66,6 @@
       }
     }
   },
-  "license": "MIT"
+  "license": "MIT",
+  "author": "Harshit Sharmaa <blockchainworld911@gmail.com>"
 }

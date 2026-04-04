@@ -118,12 +118,69 @@ export interface SigningTransport {
   ): void;
 }
 
+// ─── Runner Types ──────────────────────────────────────────────────
+
+export interface TaskParamInfo {
+  name: string;
+  description?: string;
+  defaultValue?: string;
+  isOptional: boolean;
+  isFlag: boolean;
+}
+
+export interface TaskInfo {
+  name: string;
+  description: string;
+  params: TaskParamInfo[];
+  isSubtask: boolean;
+}
+
+export interface ScriptInfo {
+  name: string;
+  path: string;
+}
+
+export interface NetworkInfo {
+  name: string;
+  chainId?: number;
+  url?: string;
+  remoteSigner?: boolean;
+}
+
+export interface ProjectContext {
+  projectRoot: string;
+  tasks: TaskInfo[];
+  networks: NetworkInfo[];
+}
+
+export interface ProcessStartedPayload {
+  processId: string;
+  type: "script" | "task";
+  name: string;
+  network?: string;
+}
+
+export interface ProcessOutputPayload {
+  processId: string;
+  stream: "stdout" | "stderr";
+  data: string;
+}
+
+export interface ProcessExitPayload {
+  processId: string;
+  code: number;
+  signal?: string;
+}
+
 // ─── Socket.io Event Map ────────────────────────────────────────────
 
 export interface ServerToClientEvents {
   "signing:request": (request: SigningRequest) => void;
   "signing:requestWalletState": () => void;
   "session:info": (info: { sessionId: string }) => void;
+  "process:started": (payload: ProcessStartedPayload) => void;
+  "process:output": (payload: ProcessOutputPayload) => void;
+  "process:exit": (payload: ProcessExitPayload) => void;
 }
 
 export interface ClientToServerEvents {

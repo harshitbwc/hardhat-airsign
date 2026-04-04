@@ -2,6 +2,7 @@ import express from "express";
 import http from "http";
 import path from "path";
 import fs from "fs";
+import { spawn, ChildProcess } from "child_process";
 import { Server as SocketIOServer, Socket } from "socket.io";
 import {
   SigningRequest,
@@ -10,6 +11,10 @@ import {
   ServerToClientEvents,
   ClientToServerEvents,
   SessionInfo,
+  ProjectContext,
+  TaskInfo,
+  ScriptInfo,
+  NetworkInfo,
 } from "./types";
 
 // Timeout for pending signing callbacks (matches HTTP long-poll timeout)
@@ -39,11 +44,20 @@ export class SigningServer {
   // Callback for when wallet account changes (so plugin can update RemoteSigner)
   private _onAccountChanged: ((address: string) => void) | null = null;
 
+  // Project context for the runner feature
+  private projectContext: ProjectContext | null = null;
+
+  // Currently running process (only one at a time)
+  private runningProcess: ChildProcess | null = null;
+  private runningProcessId: string | null = null;
+
   constructor(
     port: number = 9090,
     host: string = "0.0.0.0",
-    appPath?: string
+    appPath?: string,
+    projectContext?: ProjectContext
   ) {
+    this.projectContext = projectContext || null;
     this.app = express();
 
     // No CORS middleware — the UI is served from the same origin,
@@ -152,9 +166,109 @@ export class SigningServer {
       this.signerSocket.emit("signing:request", request);
     });
 
+    // ─── Runner API (tasks, scripts, networks) ────────────────────
+
+    // List available scripts
+    this.app.get("/api/scripts", (_req, res) => {
+      if (!this.projectContext) {
+        res.json({ scripts: [] });
+        return;
+      }
+      const scripts = this.discoverScripts();
+      res.json({ scripts });
+    });
+
+    // List available tasks
+    this.app.get("/api/tasks", (_req, res) => {
+      if (!this.projectContext) {
+        res.json({ tasks: [] });
+        return;
+      }
+      res.json({ tasks: this.projectContext.tasks });
+    });
+
+    // List available networks
+    this.app.get("/api/networks", (_req, res) => {
+      if (!this.projectContext) {
+        res.json({ networks: [] });
+        return;
+      }
+      res.json({ networks: this.projectContext.networks });
+    });
+
+    // Execute a script or task
+    this.app.post("/api/execute", (req, res) => {
+      if (!this.projectContext) {
+        res.status(400).json({ error: "Project context not available" });
+        return;
+      }
+
+      if (this.runningProcess) {
+        res.status(409).json({ error: "A process is already running. Stop it first." });
+        return;
+      }
+
+      const { type, name, network, params, envVars } = req.body;
+
+      if (!type || !name) {
+        res.status(400).json({ error: "Missing 'type' or 'name' field." });
+        return;
+      }
+
+      if (type !== "script" && type !== "task") {
+        res.status(400).json({ error: "type must be 'script' or 'task'." });
+        return;
+      }
+
+      // Validate script exists
+      if (type === "script") {
+        const scripts = this.discoverScripts();
+        if (!scripts.find((s) => s.name === name)) {
+          res.status(404).json({ error: `Script '${name}' not found.` });
+          return;
+        }
+      }
+
+      // Validate task exists
+      if (type === "task") {
+        if (!this.projectContext.tasks.find((t) => t.name === name)) {
+          res.status(404).json({ error: `Task '${name}' not found.` });
+          return;
+        }
+      }
+
+      const processId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      try {
+        this.executeProcess(processId, type, name, network, params, envVars);
+        res.json({ processId, status: "started" });
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // Kill a running process
+    this.app.post("/api/execute/kill", (_req, res) => {
+      if (!this.runningProcess) {
+        res.json({ status: "no_process" });
+        return;
+      }
+      this.killRunningProcess();
+      res.json({ status: "killed" });
+    });
+
+    // Get running process status
+    this.app.get("/api/execute/status", (_req, res) => {
+      res.json({
+        running: !!this.runningProcess,
+        processId: this.runningProcessId,
+      });
+    });
+
     // Shutdown endpoint
     this.app.post("/api/shutdown", (_req, res) => {
       res.json({ status: "shutting_down" });
+      this.killRunningProcess();
       setTimeout(() => this.stop(), 100);
     });
 
@@ -419,6 +533,140 @@ export class SigningServer {
     this.pendingTimeouts.forEach((timeout) => clearTimeout(timeout));
     this.pendingTimeouts.clear();
   }
+
+  // ─── Runner Methods ──────────────────────────────────────────────
+
+  /**
+   * Scan the project's scripts/ directory for .js and .ts files.
+   */
+  private discoverScripts(): ScriptInfo[] {
+    if (!this.projectContext?.projectRoot) return [];
+
+    const scriptsDir = path.join(this.projectContext.projectRoot, "scripts");
+    if (!fs.existsSync(scriptsDir)) return [];
+
+    try {
+      const files = fs.readdirSync(scriptsDir);
+      return files
+        .filter((f) => /\.(js|ts)$/.test(f) && !f.endsWith(".d.ts"))
+        .map((f) => ({ name: f, path: `scripts/${f}` }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Execute a Hardhat script or task as a child process.
+   * Streams stdout/stderr to all connected socket.io clients.
+   */
+  private executeProcess(
+    processId: string,
+    type: "script" | "task",
+    name: string,
+    network?: string,
+    params?: Record<string, string>,
+    envVars?: Record<string, string>
+  ): void {
+    if (!this.projectContext) throw new Error("No project context");
+
+    const args: string[] = [];
+
+    if (type === "script") {
+      args.push("run", `scripts/${name}`);
+    } else {
+      args.push(name);
+      // Add task params as --key value
+      if (params) {
+        for (const [key, value] of Object.entries(params)) {
+          if (value !== undefined && value !== "") {
+            args.push(`--${key}`, value);
+          }
+        }
+      }
+    }
+
+    // Add network flag
+    if (network) {
+      args.push("--network", network);
+    }
+
+    // Build env vars — merge user-provided with existing
+    const env: Record<string, string> = {
+      ...process.env as Record<string, string>,
+      ...(envVars || {}),
+    };
+
+    // Find npx path — use the same node that started us
+    const npxPath = process.platform === "win32" ? "npx.cmd" : "npx";
+
+    const child = spawn(npxPath, ["hardhat", ...args], {
+      cwd: this.projectContext.projectRoot,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    this.runningProcess = child;
+    this.runningProcessId = processId;
+
+    // Notify all connected clients
+    this.io.emit("process:started" as any, { processId, type, name, network });
+
+    child.stdout?.on("data", (data: Buffer) => {
+      this.io.emit("process:output" as any, {
+        processId,
+        stream: "stdout",
+        data: data.toString(),
+      });
+    });
+
+    child.stderr?.on("data", (data: Buffer) => {
+      this.io.emit("process:output" as any, {
+        processId,
+        stream: "stderr",
+        data: data.toString(),
+      });
+    });
+
+    child.on("exit", (code, signal) => {
+      this.io.emit("process:exit" as any, {
+        processId,
+        code: code ?? -1,
+        signal: signal || undefined,
+      });
+      this.runningProcess = null;
+      this.runningProcessId = null;
+    });
+
+    child.on("error", (err) => {
+      this.io.emit("process:output" as any, {
+        processId,
+        stream: "stderr",
+        data: `Process error: ${err.message}\n`,
+      });
+      this.io.emit("process:exit" as any, {
+        processId,
+        code: -1,
+        signal: undefined,
+      });
+      this.runningProcess = null;
+      this.runningProcessId = null;
+    });
+  }
+
+  /**
+   * Kill the currently running process.
+   */
+  private killRunningProcess(): void {
+    if (this.runningProcess) {
+      try {
+        this.runningProcess.kill("SIGTERM");
+      } catch {}
+      this.runningProcess = null;
+      this.runningProcessId = null;
+    }
+  }
+
+  // ─── Helpers ────────────────────────────────────────────────────
 
   private generateSessionId(): string {
     const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
