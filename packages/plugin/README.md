@@ -25,7 +25,7 @@ Every Hardhat developer knows the drill: export your MetaMask private key, paste
 1. Run `npx hardhat airsign-start` — a signing server starts in the background on port `9090`
 2. Open the URL in a browser and connect your wallet (MetaMask, Rainbow, Coinbase, etc.)
 3. Run your deploy script — transactions appear in the browser for approval
-4. Click **Sign & Send**, MetaMask signs, and the tx is broadcast. Done.
+4. Click **Confirm**, MetaMask signs, and the tx is broadcast. Done.
 
 Your existing deploy scripts work without any changes.
 
@@ -96,7 +96,7 @@ ngrok http 9090
 npx hardhat run scripts/deploy.js --network sepolia
 ```
 
-The signer sees the transaction in their browser, clicks **Sign & Send**, and the contract deploys.
+The signer sees the transaction in their browser, clicks **Confirm**, and the contract deploys.
 
 ## Usage in Scripts
 
@@ -206,7 +206,7 @@ The project is a monorepo with two packages:
 ## Development
 
 ```bash
-git clone https://github.com/AirSign-Dev/hardhat-airsign.git
+git clone https://github.com/harshitbwc/hardhat-airsign.git
 cd hardhat-airsign
 
 # Install all dependencies
