@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-04-08
+
+### Added
+
+- Explicit support for 15+ wallets: MetaMask, Coinbase Wallet, Ledger, Trust Wallet, Rabby, Safe (Gnosis), Rainbow, Phantom, Brave, Zerion, OKX, Uniswap, Bitget, Frame, and any injected wallet
+- Wallets are now grouped into "Popular" and "More Wallets" in the connect modal
+
+### Fixed
+
+- WalletConnect QR code flow now works out of the box with a default project ID
+- Users can still override with `VITE_WALLETCONNECT_PROJECT_ID` env var if needed
+
 ## [0.1.0] - 2026-04-07
 
 ### Added

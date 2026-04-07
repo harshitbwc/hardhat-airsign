@@ -34,7 +34,7 @@ Your existing deploy scripts work without any changes.
 - **Remote signing** — sign transactions from any machine, no private keys on the dev box
 - **Runner UI** — run Hardhat tasks and scripts directly from the browser with a 3-column interface (list, detail, console)
 - **Signing modal** — transaction approvals appear as an overlay without interrupting your workflow
-- **Multi-wallet support** — MetaMask, Rainbow, Coinbase Wallet, WalletConnect via RainbowKit
+- **Multi-wallet support** — MetaMask, Coinbase Wallet, Ledger, Trust Wallet, Rabby, Safe (Gnosis), Rainbow, Phantom, Brave, Zerion, OKX, Uniswap, Bitget, Frame, and any injected or WalletConnect-compatible wallet via RainbowKit
 - **Multi-chain** — Ethereum, Sepolia, Polygon, Arbitrum, Optimism, Base, BSC, Avalanche, and more
 - **Zero config** — existing deploy scripts work as-is, just set `remoteSigner: true`
 - **Block explorer links** — click through to Etherscan/Polygonscan after signing
@@ -86,7 +86,7 @@ The server starts in the background and your terminal is free:
 
 ```
   ╔══════════════════════════════════════════════════╗
-  ║            🔐 Hardhat AirSign v0.1.0             ║
+  ║            🔐 Hardhat AirSign v0.1.1             ║
   ╚══════════════════════════════════════════════════╝
 
   Signing UI:  http://localhost:9090
@@ -102,7 +102,7 @@ The server starts in the background and your terminal is free:
 
 ### 4. Connect the Signer
 
-Open the URL in a browser and connect your wallet via the RainbowKit UI.
+Open the URL in a browser and connect your wallet. Supported wallets include MetaMask, Coinbase Wallet, Ledger, Trust Wallet, Rabby, Safe (Gnosis), Rainbow, Phantom, Brave, Zerion, OKX, Uniswap, Bitget, Frame, and any WalletConnect-compatible wallet.
 
 For remote access (signer on a different machine):
 
@@ -220,6 +220,12 @@ module.exports = {
   },
 };
 ```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_WALLETCONNECT_PROJECT_ID` | Built-in default | Override the WalletConnect project ID if you want to use your own (free at [cloud.walletconnect.com](https://cloud.walletconnect.com)) |
 
 ## Architecture
 

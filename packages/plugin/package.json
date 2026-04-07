@@ -1,6 +1,6 @@
 {
   "name": "hardhat-airsign",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Hardhat 2 plugin for remote transaction signing via browser wallet (ethers v5). Deploy contracts, run tasks, and execute scripts from a browser UI — no private keys in .env files.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

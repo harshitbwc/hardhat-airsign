@@ -1,7 +1,7 @@
 {
   "name": "hardhat-airsign-app",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AirSign browser UI for remote transaction signing and Hardhat task/script execution",
   "type": "module",
   "scripts": {

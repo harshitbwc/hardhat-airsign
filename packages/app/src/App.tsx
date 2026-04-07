@@ -171,7 +171,9 @@ export default function App() {
               <p className="text-gray-500 text-sm mb-6 max-w-xs">
                 Link your browser wallet to start signing transactions
               </p>
-              <ConnectButton />
+              <div className="flex justify-center">
+                <ConnectButton />
+              </div>
             </div>
           </div>
         )}
