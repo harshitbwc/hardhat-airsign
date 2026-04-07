@@ -40,6 +40,16 @@ Your existing deploy scripts work without any changes.
 - **Block explorer links** — click through to Etherscan/Polygonscan after signing
 - **Transaction history** — see all signed/rejected transactions in the current session
 
+## Compatibility
+
+| Dependency | Supported Version |
+|------------|-------------------|
+| Hardhat | v2.x (`^2.0.0`) |
+| ethers.js | v5.x (`^5.0.0`) |
+| Node.js | >= 18 |
+
+> **Note:** This plugin uses `@nomiclabs/hardhat-ethers` (ethers v5). Projects using `@nomicfoundation/hardhat-ethers` with ethers v6 or Hardhat v3 are not yet supported. Hardhat 3 + ethers v6 support is on the roadmap.
+
 ## Quick Start
 
 ### 1. Install
@@ -228,12 +238,19 @@ The project is a monorepo with two packages:
 6. `RemoteSigner.sendTransaction()` sends the unsigned tx to the server, which forwards it to the browser, where MetaMask signs and broadcasts it
 7. The Runner spawns `npx hardhat run` or `npx hardhat <task>` as child processes, piping stdout/stderr to the browser in real time
 
-## Limitations
+## Limitations & Roadmap
 
-- **ethers v5 only** — the plugin extends `ethers.Signer` from ethers v5. Projects using `@nomicfoundation/hardhat-ethers` with ethers v6 are not yet supported.
+- **Hardhat v2 + ethers v5 only** — requires `@nomiclabs/hardhat-ethers` with ethers v5. Hardhat 3 and `@nomicfoundation/hardhat-ethers` (ethers v6) support is planned.
 - **Single signer** — `getSigners()` returns one signer (the connected wallet). Scripts that destructure multiple signers like `const [deployer, treasury] = await getSigners()` will only get one.
 - **No `signTransaction()`** — browser wallets sign and broadcast in one step (`eth_sendTransaction`). The `signTransaction()` method throws. Use `sendTransaction()` instead, which is what 99% of scripts do.
 - **One process at a time** — the Runner executes one script or task at a time. Wait for the current process to finish (or kill it) before starting another.
+
+### Coming in v2
+
+- Hardhat 3 + ethers v6 support
+- Contract interaction UI (read/write functions from browser)
+- Multi-signer support
+- Deployment history & analytics
 
 ## Development
 

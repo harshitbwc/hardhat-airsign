@@ -1,7 +1,7 @@
 {
   "name": "hardhat-airsign",
   "version": "0.1.0",
-  "description": "Hardhat plugin for remote transaction signing via browser wallet. Deploy contracts, run tasks, and execute scripts — no private keys in .env files.",
+  "description": "Hardhat 2 plugin for remote transaction signing via browser wallet (ethers v5). Deploy contracts, run tasks, and execute scripts from a browser UI — no private keys in .env files.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -20,17 +20,25 @@
   "keywords": [
     "hardhat",
     "hardhat-plugin",
+    "hardhat2",
+    "ethers-v5",
     "ethereum",
     "smart-contracts",
     "metamask",
     "airsign",
     "walletconnect",
+    "rainbowkit",
     "remote-signer",
     "browser-wallet",
     "deploy",
     "transaction-signing",
+    "no-private-key",
+    "env-security",
     "runner",
-    "solidity"
+    "solidity",
+    "web3",
+    "dapp",
+    "evm"
   ],
   "repository": {
     "type": "git",
