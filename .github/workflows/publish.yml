@@ -24,6 +24,9 @@ jobs:
       - name: Ensure latest npm (for trusted publishing)
         run: npm install -g npm@latest
 
+      - name: Configure npm registry
+        run: npm config set registry https://registry.npmjs.org/
+
       - name: Install dependencies
         run: npm ci
 
@@ -40,4 +43,5 @@ jobs:
         run: cd packages/plugin && npm run bundle-app
 
       - name: Publish to npm
-        run: cd packages/plugin && npm publish --provenance --access public
+        working-directory: packages/plugin
+        run: npm publish --provenance --access public
