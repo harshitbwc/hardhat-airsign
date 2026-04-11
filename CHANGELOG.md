@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-04-11
+
+### Added
+
+- Integration test suite with vitest (25 tests covering RemoteSigner, SigningClient, and exports)
+- GitHub Actions CI workflow (build + test on Node 18/20/22)
+- `npm test` script in root and plugin package.json
+
+### Changed
+
+- Version scheme aligned with Hardhat: airsign v2.x = Hardhat v2, airsign v3.x = Hardhat v3
+- `build:plugin` script no longer runs `npm install` (avoids corrupting hoisted node_modules in monorepo)
+
 ## [1.0.0] - 2026-04-11
 
 ### Added

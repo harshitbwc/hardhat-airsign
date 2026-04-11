@@ -65,7 +65,7 @@ The server starts in the background and your terminal is free:
 
 ```
   ╔══════════════════════════════════════════════════╗
-  ║            🔐 Hardhat AirSign v1.0.0             ║
+  ║            🔐 Hardhat AirSign v2.0.0             ║
   ╚══════════════════════════════════════════════════╝
 
   Signing UI:  http://localhost:9090
