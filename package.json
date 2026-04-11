@@ -13,7 +13,7 @@
   "scripts": {
     "setup": "npm install && npm run build:plugin && cd example && npm install",
     "build": "npm run build --workspaces",
-    "build:plugin": "cd packages/plugin && npm install && npm run build",
+    "build:plugin": "npm run build -w packages/plugin",
     "build:app": "rm -rf packages/app/dist && npm run build -w packages/app",
     "rebuild": "npm run build:plugin && npm run build:app",
     "test": "npm run test -w packages/plugin",
