@@ -1,6 +1,6 @@
 # hardhat-airsign
 
-Deploy smart contracts from your dev machine. Sign transactions from anywhere — no private keys in `.env` files ever. Run Hardhat tasks and scripts directly from the browser.
+Deploy smart contracts from your dev machine. Sign transactions from anywhere — no private keys in `.env` files ever. Run Hardhat tasks, scripts, and interact with contracts directly from the browser.
 
 ## The Problem
 
@@ -33,12 +33,15 @@ Your existing deploy scripts work without any changes.
 
 - **Remote signing** — sign transactions from any machine, no private keys on the dev box
 - **Runner UI** — run Hardhat tasks and scripts directly from the browser with a 3-column interface (list, detail, console)
+- **Contracts UI** — read and write deployed contract functions, deploy new contracts, and view decoded event logs — all from the browser
+- **Wallet-proxied RPC** — no Alchemy/Infura URL needed. When no RPC URL is configured, JSON-RPC calls are automatically proxied through the connected browser wallet
 - **Signing modal** — transaction approvals appear as an overlay without interrupting your workflow
 - **Multi-wallet support** — MetaMask, Coinbase Wallet, Ledger, Trust Wallet, Rabby, Safe (Gnosis), Rainbow, Phantom, Brave, Zerion, OKX, Uniswap, Bitget, Frame, and any injected or WalletConnect-compatible wallet via RainbowKit
 - **Multi-chain** — Ethereum, Sepolia, Polygon, Arbitrum, Optimism, Base, BSC, Avalanche, and more
 - **Zero config** — existing deploy scripts work as-is, just set `remoteSigner: true`
 - **Block explorer links** — click through to Etherscan/Polygonscan after signing
 - **Transaction history** — see all signed/rejected transactions in the current session
+- **Activity log** — tracks all contract interactions (reads, writes, deploys) with tx hashes and explorer links
 
 ## Compatibility
 
@@ -69,12 +72,14 @@ module.exports = {
   solidity: "0.8.24",
   networks: {
     sepolia: {
-      url: "https://rpc.sepolia.org",
-      remoteSigner: true,  // <-- that's it. no accounts/private keys needed.
+      url: "https://rpc.sepolia.org", // optional if you want to use your own RPC endpoint
+      remoteSigner: true,  // <-- that's it. no accounts, no private keys needed.
     },
   },
 };
 ```
+
+> **Tip:** You don't even need an RPC URL. When `url` is omitted, AirSign proxies all JSON-RPC calls through the connected browser wallet (MetaMask, etc.). If you prefer a dedicated RPC endpoint, just add `url: "https://..."` as usual.
 
 ### 3. Start the Signing Server
 
@@ -86,7 +91,7 @@ The server starts in the background and your terminal is free:
 
 ```
   ╔══════════════════════════════════════════════════╗
-  ║            🔐 Hardhat AirSign v0.1.1             ║
+  ║            🔐 Hardhat AirSign v1.0.0             ║
   ╚══════════════════════════════════════════════════╝
 
   Signing UI:  http://localhost:9090
@@ -145,6 +150,35 @@ Signing requests triggered by a running script appear as a **modal overlay** on 
 ### Running a task
 
 Same flow, but tasks also show parameter inputs (text fields, flag toggles) extracted from the task definition.
+
+## Contracts: Read, Write & Deploy from the Browser
+
+The **Contracts** tab gives you a full contract interaction UI — no Remix or Etherscan needed.
+
+### What you can do
+
+- **Read** any view/pure function on a deployed contract and see the result instantly
+- **Write** to state-changing functions — the signing modal appears in-place for approval
+- **Deploy** new contract instances with constructor parameters and payable value
+- **View decoded event logs** emitted by write transactions
+- **Set contract addresses** per-network in a batch modal (supports proxy detection)
+
+### How it works
+
+AirSign automatically discovers all compiled contracts in your project's `artifacts/` directory. The Contracts tab shows them in a left panel. Select a contract, set its deployed address for the current network, and interact with any function.
+
+Write calls route through the same signing flow as deploy scripts — the transaction appears in the signing modal, you approve in MetaMask, and the result (tx hash + decoded events) appears inline. Tx hashes are shown truncated with a copy button and direct link to the block explorer.
+
+### Wallet-proxied RPC
+
+When no `url` is configured for a network, AirSign proxies JSON-RPC calls through the browser wallet's `window.ethereum` provider via Socket.io. This means you can read contract state and send transactions on Sepolia, Mainnet, or any chain your wallet is connected to — without needing an Alchemy or Infura API key.
+
+```js
+// This works! No url needed — RPC goes through MetaMask.
+sepolia: {
+  remoteSigner: true,
+}
+```
 
 ## Usage in Scripts
 
@@ -231,18 +265,19 @@ module.exports = {
 
 The project is a monorepo with two packages:
 
-- **`packages/plugin`** — The Hardhat plugin (published to npm as `hardhat-airsign`). Contains the `RemoteSigner` (custom ethers.js v5 Signer), `SigningServer` (Express + Socket.io), `SigningClient` (HTTP transport), Runner process execution, and CLI tasks.
+- **`packages/plugin`** — The Hardhat plugin (published to npm as `hardhat-airsign`). Contains the `RemoteSigner` (custom ethers.js v5 Signer), `SigningServer` (Express + Socket.io), `SigningClient` (HTTP transport), `ContractService` (ABI parsing & interaction), Runner process execution, and CLI tasks.
 - **`packages/app`** — The signing web app (private, embedded in the plugin). React + RainbowKit + wagmi + Tailwind with an iOS-inspired glass morphism design.
 
 ### How the pieces connect
 
-1. `airsign-start` extracts tasks, networks, and scripts from the HRE, then launches a background daemon running `SigningServer`
-2. The server serves the React app and exposes HTTP endpoints for deploy scripts and Runner process execution
+1. `airsign-start` extracts tasks, networks, scripts, and contract artifacts from the HRE, then launches a background daemon running `SigningServer`
+2. The server serves the React app and exposes HTTP endpoints for deploy scripts, contract interactions, RPC proxying, and Runner process execution
 3. Deploy scripts use `SigningClient` to communicate with the server via HTTP
-4. The browser connects via Socket.io for real-time signing requests and console output streaming
+4. The browser connects via Socket.io for real-time signing requests, console output streaming, and RPC proxying
 5. When a deploy script calls `getSigners()`, the plugin connects to the server, gets the wallet address, and returns a `RemoteSigner`
 6. `RemoteSigner.sendTransaction()` sends the unsigned tx to the server, which forwards it to the browser, where MetaMask signs and broadcasts it
 7. The Runner spawns `npx hardhat run` or `npx hardhat <task>` as child processes, piping stdout/stderr to the browser in real time
+8. The RPC proxy relays JSON-RPC calls from the server through the browser wallet's `window.ethereum` via Socket.io — enabling testnet interactions without an external RPC URL
 
 ## Limitations & Roadmap
 
@@ -254,9 +289,9 @@ The project is a monorepo with two packages:
 ### Coming in v2
 
 - Hardhat 3 + ethers v6 support
-- Contract interaction UI (read/write functions from browser)
 - Multi-signer support
 - Deployment history & analytics
+- Contract verification integration
 
 ## Development
 

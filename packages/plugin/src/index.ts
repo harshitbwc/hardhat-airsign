@@ -70,8 +70,18 @@ async function getAirSignSigner(hre: any): Promise<RemoteSigner> {
   }
   console.log(`  ✅ Signer ready: ${signerAddress}\n`);
 
-  // 3. Create provider from network config
-  const rpcUrl = (networkConfig as any).url || "http://127.0.0.1:8545";
+  // 3. Create provider from network config.
+  //    If no explicit URL is set, use the AirSign RPC proxy which
+  //    relays JSON-RPC calls through the connected browser wallet.
+  //    This means users don't need to configure Alchemy/Infura URLs
+  //    — MetaMask's built-in provider handles RPC.
+  const explicitUrl = (networkConfig as any).url;
+  const rpcUrl = explicitUrl || `http://127.0.0.1:${port}/api/rpc`;
+
+  if (!explicitUrl) {
+    console.log(`  📡 No RPC URL configured — using wallet-proxied RPC via AirSign`);
+  }
+
   const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
 
   // 4. Create RemoteSigner with the HTTP client as transport
@@ -148,4 +158,12 @@ extendEnvironment((hre) => {
 export { RemoteSigner } from "./RemoteSigner";
 export { SigningClient } from "./SigningClient";
 export { SigningServer } from "./SigningServer";
+export { ContractService } from "./ContractService";
 export type { RemoteSignerConfig, SigningRequest, SigningResponse } from "./types";
+export type {
+  ContractInfo,
+  ABIFunction,
+  ABIEvent,
+  ABIParam,
+  DecodedEvent,
+} from "./ContractService";

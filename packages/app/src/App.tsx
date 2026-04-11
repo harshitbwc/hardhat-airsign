@@ -5,8 +5,9 @@ import { useSigningSession } from "./hooks/useSigningSession";
 import { SigningQueue } from "./components/SigningQueue";
 import { SigningModal } from "./components/SigningModal";
 import { Runner } from "./components/Runner";
+import { ContractsTab } from "./components/ContractsTab";
 
-type AppTab = "signer" | "runner";
+type AppTab = "signer" | "runner" | "contracts";
 
 export default function App() {
   const { address, isConnected } = useAccount();
@@ -56,7 +57,7 @@ export default function App() {
   }, [chainId, isConnected, notifyChainChanged]);
 
   // Show signing modal overlay when on Runner tab and requests come in
-  const showSigningModal = activeTab === "runner" && pendingRequests.length > 0;
+  const showSigningModal = (activeTab === "runner" || activeTab === "contracts") && pendingRequests.length > 0;
 
   return (
     <div className="h-screen bg-[#0a0a0a] flex flex-col overflow-hidden">
@@ -106,6 +107,16 @@ export default function App() {
                   }`}
                 >
                   Runner
+                </button>
+                <button
+                  onClick={() => setActiveTab("contracts")}
+                  className={`relative text-[12px] font-medium py-1.5 px-4 rounded-lg transition-all ${
+                    activeTab === "contracts"
+                      ? "segment-active text-white"
+                      : "text-gray-500 hover:text-gray-400"
+                  }`}
+                >
+                  Contracts
                 </button>
               </div>
             )}
@@ -210,9 +221,14 @@ export default function App() {
         {status === "connected" && isConnected && activeTab === "runner" && (
           <Runner socket={socket} />
         )}
+
+        {/* ─── Contracts Tab (full width, 3-column) ──── */}
+        {status === "connected" && isConnected && activeTab === "contracts" && (
+          <ContractsTab socket={socket} />
+        )}
       </main>
 
-      {/* ─── Signing Modal (overlays Runner) ─────────── */}
+      {/* ─── Signing Modal (overlays Runner/Contracts) ── */}
       {showSigningModal && (
         <SigningModal
           requests={pendingRequests}

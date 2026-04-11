@@ -1,6 +1,6 @@
 # hardhat-airsign
 
-Deploy smart contracts from your dev machine. Sign transactions from anywhere — no private keys in `.env` files ever.
+Deploy smart contracts from your dev machine. Sign transactions from anywhere — no private keys in `.env` files ever. Run Hardhat tasks, scripts, and interact with contracts directly from the browser.
 
 ## The Problem
 
@@ -49,7 +49,7 @@ module.exports = {
   networks: {
     sepolia: {
       url: "https://rpc.sepolia.org",
-      remoteSigner: true,  // <-- that's it. no accounts/private keys needed.
+      remoteSigner: true,  // <-- that's it. no accounts, no private keys, no RPC URL needed.
     },
   },
 };
@@ -65,7 +65,7 @@ The server starts in the background and your terminal is free:
 
 ```
   ╔══════════════════════════════════════════════════╗
-  ║            🔐 Hardhat AirSign v0.1.0             ║
+  ║            🔐 Hardhat AirSign v1.0.0             ║
   ╚══════════════════════════════════════════════════╝
 
   Signing UI:  http://localhost:9090
@@ -173,35 +173,40 @@ module.exports = {
 };
 ```
 
-## Signing UI Features
+## UI Features
 
-- **RainbowKit wallet connection** — MetaMask, Rainbow, Coinbase Wallet, WalletConnect, and more
-- **Transaction details** — shows To, Value, Data with expandable full transaction data
+- **RainbowKit wallet connection** — MetaMask, Coinbase Wallet, Ledger, Trust Wallet, Rabby, Safe (Gnosis), Rainbow, Phantom, Brave, Zerion, OKX, Uniswap, Bitget, Frame, and any WalletConnect-compatible wallet
+- **Runner tab** — run Hardhat tasks and scripts from a 3-column browser UI with real-time console output
+- **Contracts tab** — read/write deployed contract functions, deploy new instances with constructor params, view decoded event logs
+- **Wallet-proxied RPC** — no Alchemy/Infura URL needed; JSON-RPC calls proxy through the connected browser wallet
+- **Signing modal** — transaction approvals overlay the current tab without interruption
 - **Block explorer links** — click through to Etherscan/Polygonscan/etc. after signing
 - **Multi-chain support** — Ethereum, Sepolia, Polygon, Arbitrum, Optimism, Base, BSC, Avalanche, and more
-- **Transaction history** — see all signed/rejected transactions in the current session
+- **Transaction history & activity log** — tracks all signed/rejected transactions, contract reads, writes, and deploys
 
 ## Architecture
 
 The project is a monorepo with two packages:
 
-- **`packages/plugin`** — The Hardhat plugin (published to npm as `hardhat-airsign`). Contains the `RemoteSigner` (custom ethers.js v5 Signer), `SigningServer` (Express + Socket.io), `SigningClient` (HTTP transport), and CLI tasks.
+- **`packages/plugin`** — The Hardhat plugin (published to npm as `hardhat-airsign`). Contains the `RemoteSigner` (custom ethers.js v5 Signer), `SigningServer` (Express + Socket.io), `SigningClient` (HTTP transport), `ContractService` (ABI parsing & interaction), and CLI tasks.
 - **`packages/app`** — The signing web app (private, embedded in the plugin). React + RainbowKit + wagmi + Tailwind. Served by the plugin's Express server.
 
 ### How the pieces connect
 
 1. `airsign-start` launches a background daemon running `SigningServer` (Express + Socket.io)
-2. The server serves the React signing app and exposes HTTP endpoints for deploy scripts
+2. The server serves the React signing app and exposes HTTP endpoints for deploy scripts, contract interactions, and RPC proxying
 3. Deploy scripts use `SigningClient` to communicate with the server via HTTP
-4. The browser connects to the server via Socket.io for real-time signing requests
+4. The browser connects to the server via Socket.io for real-time signing requests, console streaming, and RPC proxying
 5. When a deploy script calls `getSigners()`, the plugin connects to the server, gets the wallet address, and returns a `RemoteSigner`
 6. `RemoteSigner.sendTransaction()` sends the unsigned tx to the server, which forwards it to the browser, where MetaMask signs and broadcasts it
+7. The RPC proxy relays JSON-RPC calls through the browser wallet's `window.ethereum` via Socket.io
 
 ## Limitations
 
 - **ethers v5 only** — the plugin extends `ethers.Signer` from ethers v5. Projects using `@nomicfoundation/hardhat-ethers` with ethers v6 are not yet supported.
 - **Single signer** — `getSigners()` returns one signer (the connected wallet). Scripts that destructure multiple signers like `const [deployer, treasury] = await getSigners()` will only get one.
 - **No `signTransaction()`** — browser wallets sign and broadcast in one step (`eth_sendTransaction`). The `signTransaction()` method throws. Use `sendTransaction()` instead, which is what 99% of scripts do.
+- **One process at a time** — the Runner executes one script or task at a time.
 
 ## Development
 

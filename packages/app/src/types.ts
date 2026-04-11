@@ -101,3 +101,79 @@ export interface ProcessExitPayload {
   code: number;
   signal?: string;
 }
+
+// ─── Contract Interaction Types ───────────────────────────────────
+
+export interface ABIParam {
+  name: string;
+  type: string;
+  components?: ABIParam[];
+  indexed?: boolean;
+  internalType?: string;
+}
+
+export interface ABIFunction {
+  name: string;
+  signature: string;
+  stateMutability: "view" | "pure" | "nonpayable" | "payable";
+  inputs: ABIParam[];
+  outputs: ABIParam[];
+  payable: boolean;
+}
+
+export interface ABIEvent {
+  name: string;
+  signature: string;
+  inputs: ABIParam[];
+}
+
+export interface ContractInfo {
+  contractName: string;
+  sourceName: string;
+  abi: any[];
+  functions: {
+    read: ABIFunction[];
+    write: ABIFunction[];
+  };
+  events: ABIEvent[];
+  deployedAddresses: Record<string, string>;
+}
+
+export interface DecodedEvent {
+  name: string;
+  signature: string;
+  args: Record<string, any>;
+  logIndex: number;
+  address: string;
+}
+
+export interface ReadCallResult {
+  success: boolean;
+  result?: any;
+  error?: string;
+}
+
+export interface EventsResult {
+  success: boolean;
+  events?: DecodedEvent[];
+  error?: string;
+}
+
+export interface ProxyCheckResult {
+  isProxy: boolean;
+  implementationAddress?: string;
+  adminAddress?: string;
+  matchedContract?: string;
+}
+
+export interface ActivityLogEntry {
+  id: string;
+  timestamp: number;
+  type: "read" | "write" | "event" | "error";
+  contractName: string;
+  functionName: string;
+  args?: any[];
+  result?: any;
+  txHash?: string;
+  error?: string;
+}

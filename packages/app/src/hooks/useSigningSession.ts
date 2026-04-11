@@ -97,6 +97,34 @@ export function useSigningSession(
       setPendingRequests((prev) => [...prev, request]);
     });
 
+    // Listen for RPC proxy requests from the server.
+    // Relays JSON-RPC calls through the browser's wallet provider.
+    socket.on("rpc:request" as any, async (payload: { rpcId: string; method: string; params?: any[] }) => {
+      try {
+        // Use window.ethereum (injected provider) for RPC relay
+        const ethereum = (window as any).ethereum;
+        if (!ethereum) {
+          socket.emit("rpc:response", {
+            rpcId: payload.rpcId,
+            error: { code: -32000, message: "No injected provider (window.ethereum) available" },
+          });
+          return;
+        }
+
+        const result = await ethereum.request({
+          method: payload.method,
+          params: payload.params || [],
+        });
+
+        socket.emit("rpc:response", { rpcId: payload.rpcId, result });
+      } catch (err: any) {
+        socket.emit("rpc:response", {
+          rpcId: payload.rpcId,
+          error: { code: err.code || -32000, message: err.message || "RPC call failed" },
+        });
+      }
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;

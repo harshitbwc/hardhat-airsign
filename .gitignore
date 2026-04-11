@@ -16,6 +16,7 @@ example/.env
 example/node_modules/
 example/.airsign.pid
 example/.airsign.log
+example/.airsign-addresses.json
 example/artifacts/
 example/cache/
 example/typechain-types/

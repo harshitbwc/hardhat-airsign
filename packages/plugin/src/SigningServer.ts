@@ -16,6 +16,7 @@ import {
   ScriptInfo,
   NetworkInfo,
 } from "./types";
+import { ContractService } from "./ContractService";
 
 // Timeout for pending signing callbacks (matches HTTP long-poll timeout)
 const CALLBACK_TIMEOUT_MS = 300_000; // 5 minutes
@@ -35,6 +36,7 @@ export class SigningServer {
   private pendingCallbacks: Map<string, (response: SigningResponse) => void> =
     new Map();
   private pendingTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  private pendingRpcCallbacks: Map<string, (result: any, error: any) => void> = new Map();
 
   // Promises for connection state
   private signerConnectedPromise: Promise<string>;
@@ -50,6 +52,9 @@ export class SigningServer {
   // Currently running process (only one at a time)
   private runningProcess: ChildProcess | null = null;
   private runningProcessId: string | null = null;
+
+  // Contract interaction service
+  private contractService: ContractService | null = null;
 
   constructor(
     port: number = 9090,
@@ -265,6 +270,383 @@ export class SigningServer {
       });
     });
 
+    // ─── Contracts API (contract interaction) ──────────────────────
+
+    // Initialize contract service if project context available
+    if (this.projectContext) {
+      this.contractService = new ContractService(
+        this.projectContext.projectRoot,
+        this.projectContext.networks
+      );
+      // Scan artifacts asynchronously (non-blocking)
+      this.contractService.scanArtifacts().catch((err) => {
+        console.log("  ⚠️  Failed to scan contract artifacts:", err.message);
+      });
+    }
+
+    // List all contracts with ABIs and parsed functions
+    this.app.get("/api/contracts", (_req, res) => {
+      if (!this.contractService) {
+        res.json({ contracts: [] });
+        return;
+      }
+      res.json({ contracts: this.contractService.getContracts() });
+    });
+
+    // Get saved contract addresses per network
+    this.app.get("/api/contracts/addresses", (_req, res) => {
+      if (!this.contractService) {
+        res.json({ addresses: {} });
+        return;
+      }
+      res.json({ addresses: this.contractService.getAddresses() });
+    });
+
+    // Save/update a contract address for a network
+    this.app.post("/api/contracts/addresses", (req, res) => {
+      if (!this.contractService) {
+        res.status(400).json({ error: "Contract service not available" });
+        return;
+      }
+
+      const { contractName, networkName, address } = req.body;
+
+      if (!contractName || !networkName || !address) {
+        res.status(400).json({ error: "Missing contractName, networkName, or address" });
+        return;
+      }
+
+      this.contractService.saveAddress(contractName, networkName, address);
+      res.json({ success: true });
+    });
+
+    // Execute a read-only (view/pure) function call
+    this.app.post("/api/contract/read", async (req, res) => {
+      if (!this.contractService) {
+        res.status(400).json({ success: false, error: "Contract service not available" });
+        return;
+      }
+
+      const { contractAddress, abi, functionName, args, networkName } = req.body;
+
+      if (!contractAddress || !abi || !functionName || !networkName) {
+        res.status(400).json({
+          success: false,
+          error: "Missing required fields: contractAddress, abi, functionName, networkName",
+        });
+        return;
+      }
+
+      const result = await this.contractService.executeReadCall({
+        contractAddress,
+        abi,
+        functionName,
+        args: args || [],
+        networkName,
+      });
+
+      res.json(result);
+    });
+
+    // Fetch and decode events from a transaction receipt
+    this.app.post("/api/contract/events", async (req, res) => {
+      if (!this.contractService) {
+        res.status(400).json({ success: false, error: "Contract service not available" });
+        return;
+      }
+
+      const { contractAddress, abi, txHash, networkName } = req.body;
+
+      if (!txHash || !abi || !networkName) {
+        res.status(400).json({
+          success: false,
+          error: "Missing required fields: txHash, abi, networkName",
+        });
+        return;
+      }
+
+      const result = await this.contractService.fetchEvents({
+        contractAddress: contractAddress || "0x",
+        abi,
+        txHash,
+        networkName,
+      });
+
+      res.json(result);
+    });
+
+    // Check if a contract address is a proxy (ERC-1967)
+    this.app.post("/api/contract/proxy", async (req, res) => {
+      if (!this.contractService) {
+        res.status(400).json({ isProxy: false, error: "Contract service not available" });
+        return;
+      }
+
+      const { contractAddress, networkName } = req.body;
+
+      if (!contractAddress || !networkName) {
+        res.status(400).json({
+          isProxy: false,
+          error: "Missing contractAddress or networkName",
+        });
+        return;
+      }
+
+      const result = await this.contractService.checkProxy(contractAddress, networkName);
+      res.json(result);
+    });
+
+    // Execute a write (state-changing) function via the signing flow.
+    // Encodes the call, creates a signing request, and waits for wallet approval.
+    this.app.post("/api/contract/write", async (req, res) => {
+      if (!this.contractService) {
+        res.status(400).json({ success: false, error: "Contract service not available" });
+        return;
+      }
+
+      const { contractAddress, abi, functionName, args, networkName, value } = req.body;
+
+      if (!contractAddress || !abi || !functionName || !networkName) {
+        res.status(400).json({
+          success: false,
+          error: "Missing required fields: contractAddress, abi, functionName, networkName",
+        });
+        return;
+      }
+
+      if (!this.signerSocket || !this.isSignerConnected) {
+        res.status(503).json({
+          success: false,
+          error: "No wallet connected. Open the AirSign UI and connect your wallet.",
+        });
+        return;
+      }
+
+      try {
+        // Encode the function call data using ethers Interface
+        const { createInterface } = await import("./adapters/ethers-adapter");
+        const iface = createInterface(abi);
+        const callData = iface.encodeFunctionData(functionName, args || []);
+
+        // Build a signing request
+        const requestId = `write-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const signingRequest: SigningRequest = {
+          id: requestId,
+          type: "sendTransaction",
+          transaction: {
+            to: contractAddress,
+            data: callData,
+            value: value && value !== "0" ? value : undefined,
+            from: this.sessionInfo.signerAddress || undefined,
+          },
+          metadata: {
+            contractName: functionName,
+            functionName,
+            description: `Call ${functionName} on contract`,
+          },
+        };
+
+        // Allow up to 5 minutes for user to approve
+        req.setTimeout(CALLBACK_TIMEOUT_MS);
+
+        // Route through the signing flow
+        let responded = false;
+        const callback = (response: SigningResponse) => {
+          if (responded) return;
+          responded = true;
+          this.clearPendingCallback(requestId);
+
+          if (response.success) {
+            res.json({ success: true, txHash: response.result });
+          } else {
+            res.json({ success: false, error: response.error || "Transaction rejected" });
+          }
+        };
+
+        this.pendingCallbacks.set(requestId, callback);
+
+        const timeout = setTimeout(() => {
+          if (!responded) {
+            responded = true;
+            this.pendingCallbacks.delete(requestId);
+            this.pendingTimeouts.delete(requestId);
+            res.status(504).json({
+              success: false,
+              error: "Transaction timed out. The wallet did not respond within 5 minutes.",
+            });
+          }
+        }, CALLBACK_TIMEOUT_MS);
+
+        this.pendingTimeouts.set(requestId, timeout);
+
+        // Forward to browser wallet
+        this.signerSocket.emit("signing:request", signingRequest);
+      } catch (err: any) {
+        res.status(400).json({ success: false, error: err.message });
+      }
+    });
+
+    // Re-scan artifacts (useful after recompilation)
+    this.app.post("/api/contracts/rescan", async (_req, res) => {
+      if (!this.contractService) {
+        res.status(400).json({ error: "Contract service not available" });
+        return;
+      }
+
+      await this.contractService.scanArtifacts();
+      res.json({ success: true, contracts: this.contractService.getContracts().length });
+    });
+
+    // ─── RPC Proxy ─────────────────────────────────────────────────
+    // Proxies JSON-RPC calls through the connected browser wallet.
+    // This allows the plugin to read on-chain data even when no explicit
+    // RPC URL is configured — the browser wallet's provider (MetaMask, etc.)
+    // is already connected to the right network.
+
+    this.app.post("/api/rpc", (req, res) => {
+      if (!this.signerSocket || !this.isSignerConnected) {
+        res.status(503).json({
+          jsonrpc: "2.0",
+          id: req.body?.id || null,
+          error: { code: -32000, message: "No wallet connected" },
+        });
+        return;
+      }
+
+      const { method, params, id } = req.body;
+      const rpcId = `rpc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+      // Set 30s timeout for RPC calls
+      const timeout = setTimeout(() => {
+        this.pendingRpcCallbacks.delete(rpcId);
+        res.status(504).json({
+          jsonrpc: "2.0",
+          id: id || null,
+          error: { code: -32000, message: "RPC call timed out" },
+        });
+      }, 30_000);
+
+      this.pendingRpcCallbacks.set(rpcId, (result: any, error: any) => {
+        clearTimeout(timeout);
+        this.pendingRpcCallbacks.delete(rpcId);
+        if (error) {
+          res.json({ jsonrpc: "2.0", id: id || null, error });
+        } else {
+          res.json({ jsonrpc: "2.0", id: id || null, result });
+        }
+      });
+
+      this.signerSocket.emit("rpc:request" as any, { rpcId, method, params });
+    });
+
+    // Deploy contract endpoint
+    this.app.post("/api/contract/deploy", async (req, res) => {
+      if (!this.signerSocket || !this.isSignerConnected) {
+        res.status(503).json({
+          success: false,
+          error: "No wallet connected. Open the AirSign UI and connect your wallet.",
+        });
+        return;
+      }
+
+      const { contractName, abi, args, networkName, value } = req.body;
+
+      if (!contractName || !abi) {
+        res.status(400).json({ success: false, error: "Missing contractName or abi" });
+        return;
+      }
+
+      try {
+        // Find the bytecode from artifacts
+        const contract = this.contractService?.getContracts().find(
+          (c) => c.contractName === contractName
+        );
+
+        // We need to get the bytecode from the artifact file
+        let bytecode: string | undefined;
+        if (this.projectContext?.projectRoot) {
+          const artifactsDir = path.join(this.projectContext.projectRoot, "artifacts");
+          bytecode = this.findBytecodeInArtifacts(artifactsDir, contractName);
+        }
+
+        if (!bytecode) {
+          res.status(400).json({ success: false, error: `Bytecode not found for ${contractName}. Compile first.` });
+          return;
+        }
+
+        // Encode constructor args
+        const { createInterface } = await import("./adapters/ethers-adapter");
+        const iface = createInterface(abi);
+
+        let deployData = bytecode;
+        const constructorFragment = iface.deploy;
+        if (constructorFragment && args && args.length > 0) {
+          const encodedArgs = iface.encodeDeploy(args);
+          deployData = bytecode + encodedArgs.slice(2); // remove 0x from encoded args
+        }
+
+        // Build a signing request for deployment (to = null)
+        const requestId = `deploy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const signingRequest: SigningRequest = {
+          id: requestId,
+          type: "sendTransaction",
+          transaction: {
+            from: this.sessionInfo.signerAddress || undefined,
+            data: deployData,
+            value: value && value !== "0" ? value : undefined,
+            // No "to" field — signals contract creation
+          },
+          metadata: {
+            contractName,
+            functionName: "constructor",
+            description: `Deploy ${contractName}`,
+          },
+        };
+
+        req.setTimeout(CALLBACK_TIMEOUT_MS);
+
+        let responded = false;
+        const callback = (response: SigningResponse) => {
+          if (responded) return;
+          responded = true;
+          this.clearPendingCallback(requestId);
+
+          if (response.success && response.result) {
+            // response.result is the tx hash — we need to get the deployed address
+            // from the receipt. Emit back with the tx hash and let the UI poll/resolve.
+            res.json({
+              success: true,
+              txHash: response.result,
+              // Address will come from the receipt once confirmed
+              address: null,
+            });
+          } else {
+            res.json({ success: false, error: response.error || "Deployment rejected" });
+          }
+        };
+
+        this.pendingCallbacks.set(requestId, callback);
+
+        const timeout = setTimeout(() => {
+          if (!responded) {
+            responded = true;
+            this.pendingCallbacks.delete(requestId);
+            this.pendingTimeouts.delete(requestId);
+            res.status(504).json({
+              success: false,
+              error: "Deployment timed out. The wallet did not respond within 5 minutes.",
+            });
+          }
+        }, CALLBACK_TIMEOUT_MS);
+
+        this.pendingTimeouts.set(requestId, timeout);
+
+        this.signerSocket.emit("signing:request", signingRequest);
+      } catch (err: any) {
+        res.status(400).json({ success: false, error: err.message });
+      }
+    });
+
     // Shutdown endpoint
     this.app.post("/api/shutdown", (_req, res) => {
       res.json({ status: "shutting_down" });
@@ -473,6 +855,14 @@ export class SigningServer {
         console.log(`  🔄 Chain changed: ${chainId}`);
       });
 
+      // Handle RPC proxy responses from browser
+      socket.on("rpc:response" as any, (payload: { rpcId: string; result?: any; error?: any }) => {
+        const callback = this.pendingRpcCallbacks.get(payload.rpcId);
+        if (callback) {
+          callback(payload.result, payload.error);
+        }
+      });
+
       // Handle signer disconnect
       socket.on("signer:disconnected", () => {
         if (socket !== this.signerSocket) return; // ignore stale sockets
@@ -667,6 +1057,36 @@ export class SigningServer {
   }
 
   // ─── Helpers ────────────────────────────────────────────────────
+
+  /**
+   * Find bytecode for a contract name from the artifacts directory.
+   */
+  private findBytecodeInArtifacts(artifactsDir: string, contractName: string): string | undefined {
+    try {
+      const entries = fs.readdirSync(artifactsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(artifactsDir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === "build-info") continue;
+          const found = this.findBytecodeInArtifacts(fullPath, contractName);
+          if (found) return found;
+        } else if (
+          entry.isFile() &&
+          entry.name === `${contractName}.json` &&
+          !entry.name.endsWith(".dbg.json")
+        ) {
+          const raw = fs.readFileSync(fullPath, "utf-8");
+          const artifact = JSON.parse(raw);
+          if (artifact.bytecode && artifact.bytecode !== "0x") {
+            return artifact.bytecode;
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return undefined;
+  }
 
   private generateSessionId(): string {
     const chars = "abcdefghijklmnopqrstuvwxyz0123456789";

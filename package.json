@@ -1,6 +1,6 @@
 {
   "name": "hardhat-airsign-monorepo",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "private": true,
   "description": "Deploy smart contracts from your dev machine. Sign transactions and run tasks from anywhere — no private keys needed.",
   "repository": {
@@ -14,7 +14,9 @@
     "setup": "npm install && npm run build:plugin && cd example && npm install",
     "build": "npm run build --workspaces",
     "build:plugin": "cd packages/plugin && npm install && npm run build",
-    "build:app": "npm run build -w packages/app",
+    "build:app": "rm -rf packages/app/dist && npm run build -w packages/app",
+    "rebuild": "npm run build:plugin && npm run build:app",
+    "test": "npm run test -w packages/plugin",
     "dev:app": "npm run dev -w packages/app",
     "clean": "rm -rf packages/*/dist packages/*/node_modules node_modules"
   },

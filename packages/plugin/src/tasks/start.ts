@@ -94,7 +94,7 @@ task("airsign-start", "Start the AirSign signing server in the background")
 
     console.log("");
     console.log("  ╔══════════════════════════════════════════════════╗");
-    console.log("  ║            🔐 Hardhat AirSign v0.1.0             ║");
+    console.log("  ║            🔐 Hardhat AirSign v1.0.0             ║");
     console.log("  ╚══════════════════════════════════════════════════╝");
     console.log("");
     console.log(`  Signing UI:  http://localhost:${port}`);

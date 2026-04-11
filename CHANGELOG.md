@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0] - 2026-04-11
+
+### Added
+
+- **Contracts UI** — new Contracts tab for interacting with deployed contracts directly from the browser
+  - Read view/pure functions with type-smart input fields (address, uint, bool, bytes, string, arrays, tuples)
+  - Write to state-changing functions with signing modal approval
+  - Deploy new contract instances with constructor parameters and payable value support
+  - Decoded event logs displayed inline after write transactions
+  - Batch contract address setting per-network with proxy detection
+  - Per-function loading states for concurrent interactions
+  - Activity log tracking all contract reads, writes, and deploys
+  - Truncated tx hashes with copy button and block explorer links
+- **Wallet-proxied RPC** — when no `url` is configured for a network, JSON-RPC calls are automatically proxied through the connected browser wallet via Socket.io. No Alchemy/Infura API key needed.
+- **Deploy from UI** — deploy contracts from the Contracts tab with constructor params, network selector, and payable value
+- **Event viewer** — raw/formatted toggle for decoded event logs with auto-conversion of large numbers (wei/ether), hex to decimal, and timestamp detection
+- **Block explorer utilities** — shared explorer URL mapping for Ethereum, Sepolia, Polygon, Arbitrum, Optimism, Base, BSC, Avalanche, Goerli, Mumbai, and more
+- `npm run rebuild` convenience script in root package.json
+
+### Changed
+
+- Network config no longer requires `url` — AirSign falls back to wallet-proxied RPC when omitted
+- `build:app` script now auto-cleans dist folder before building
+
 ## [0.1.1] - 2026-04-08
 
 ### Added
